@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -11,21 +11,21 @@
   <link href="https://googleapis.com" rel="stylesheet">
   <style>
     html, body {
-  overflow-x: hidden; /* Stops sideways glitch */
-  overflow-y: auto;   /* THIS PREVENTS THE FREEZE - allows vertical scrolling */
-  height: 100%;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  -webkit-overflow-scrolling: touch; /* Makes scrolling feel like a real app */
-}
+      overflow-x: hidden;
+      overflow-y: auto;   /* Unlocks vertical scrolling */
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      -webkit-overflow-scrolling: touch; /* Smooth iPhone scrolling */
+    }
     .app {
       display: flex;
       flex-direction: column;
       min-height: 100vh;
-      /* Pushes the header below your Dynamic Island */
+      /* Pushes content below the Dynamic Island */
       padding-top: env(safe-area-inset-top);
-      /* Lifts the bottom menu above the home bar */
+      /* Lifts the plus button above the home bar */
       padding-bottom: env(safe-area-inset-bottom);
     }
 :root {
@@ -89,7 +89,7 @@ body { font-family: 'Sora', sans-serif; background: var(--bg); color: var(--text
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
- padding: calc(env(safe-area-inset-top) + 44px) 16px 0px;
+ padding: calc(env(safe-area-inset-top) + 16px) 16px 10px;
 }
 [data-theme="light"] .header { background: rgba(240,242,248,0.92); }
 .header-inner { display: flex; align-items: center; gap: 10px; padding: 0 10px 12px; }    
