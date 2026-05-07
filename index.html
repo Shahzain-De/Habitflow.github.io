@@ -1,21 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<link rel="apple-touch-icon" href="https://github.com/Shahzain-De/Habitflow.github.io/blob/main/App_Icon.png?raw=true">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <link rel="apple-touch-icon" href="https://githubusercontent.com">
   <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="HabitFlow">
-<title>HabitFlow</title>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  html, body {
-  overflow-x: hidden;
-  width: 100%;
-  position: relative;
-  touch-action: pan-y;
-}
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="HabitFlow">
+  <title>HabitFlow</title>
+  <link href="https://googleapis.com" rel="stylesheet">
+  <style>
+    html, body {
+      overflow-x: hidden;
+      width: 100%;
+      position: relative;
+      touch-action: pan-y;
+      /* Perfect fix for iPhone 14 Pro Dynamic Island and rounded edges */
+      padding-top: calc(env(safe-area-inset-top) + 15px);
+      padding-right: 20px;
+      padding-left: 20px;
+      padding-bottom: env(safe-area-inset-bottom);
+      margin: 0;
+    }
 :root {
   --bg: #0a0b0f;
   --surface: #111318;
