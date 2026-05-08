@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+
+<!--
+  ┌─────────────────────────────────────────────────────┐
+  │  iOS NATIVE WEB APP — iPhone 14 Pro Optimized       │
+  │  viewport-fit=cover → content bleeds behind         │
+  │  Dynamic Island (top) and Home Bar (bottom)         │
+  └─────────────────────────────────────────────────────┘
+-->
+<meta name="viewport"
+  content="width=device-width, initial-scale=1.0,
+           minimum-scale=1.0, maximum-scale=1.0,
+           user-scalable=no, viewport-fit=cover">
+
+<!-- Standalone mode: removes Safari chrome on Home Screen launch -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<!-- black-translucent → status bar overlaps our content (we pad manually) -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HabitFlow">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0b0f">
+<meta name="format-detection" content="telephone=no">
+
+<!-- Home Screen icon — icon.jpeg lives in the same repo folder as this file -->
+<link rel="apple-touch-icon" href="icon.jpeg">
+<link rel="apple-touch-icon" sizes="180x180" href="icon.jpeg">
+<link rel="shortcut icon" href="icon.jpeg">
+
+<title>HabitFlow</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+/* ════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ════════════════════════════════════════════════════════ */
+:root {
+  --bg:       #0a0b0f;
+  --surface:  #111318;
+  --card:     #181c26;
+  --card2:    #1e2333;
+  --border:   #252b3d;
+  --border2:  #2f3650;
+  --text:     #eef0f8;
+  --muted:    #6b758f;
+  --muted2:   #8891aa;
+  --accent:   #6c63ff;
+  --accent2:  #8b84ff;
+  --green:    #00d97e;
+  --green2:   #00a85f;
+  --red:      #ff4d6d;
+  --orange:   #ff8c42;
+  --yellow:   #ffd166;
+  --blue:     #4fc3f7;
+  --pink:     #f72585;
+  --teal:     #06d6a0;
+  --radius:   18px;
+  --shadow:   0 8px 32px rgba(0,0,0,0.4);
+
+  /*
+    iPhone 14 Pro hardware geometry (portrait):
+    ┌──────────────────────────────────┐
+    │  Dynamic Island  ← ~59 px safe  │
+    │                                  │
+    │        CONTENT AREA              │
+    │                                  │
+    │  Home Bar ← ~34 px safe         │
+    └──────────────────────────────────┘
+
+    env(safe-area-inset-top)    ≈ 59px  (Dynamic Island clearance)
+    env(safe-area-inset-bottom) ≈ 34px  (Home Bar clearance)
+    env(safe-area-inset-left/right) ≈ 0px portrait, 44px landscape
+
+    We use max(env(…), fallback) so the app looks
+    correct both in standalone AND in Safari.
+  */
+  --sat: env(safe-area-inset-top,    59px);
+  --sab: env(safe-area-inset-bottom, 34px);
+  --sal: env(safe-area-inset-left,    0px);
+  --sar: env(safe-area-inset-right,   0px);
+
+  /* Bottom-nav icon row height (before safe-area padding) */
+  --bnav-row: 54px;
+  /* Total bottom nav height including Home Bar */
+  --bnav-h: calc(var(--bnav-row) + var(--sab));
+
+  /* Horizontal content gutter: 16px + curved-edge clearance */
+  --gutter: max(16px, calc(var(--sal) + 16px));
+  --gutter-r: max(16px, calc(var(--sar) + 16px));
+}
+
+[data-theme="light"] {
+  --bg:      #f0f2f8;
+  --surface: #ffffff;
+  --card:    #ffffff;
+  --card2:   #f5f6fa;
+  --border:  #e0e4f0;
+  --border2: #ccd0e0;
+  --text:    #1a1d2e;
+  --muted:   #8891aa;
+  --muted2:  #6b758f;
+}
+
+/* ════════════════════════════════════════════════════════
+   GLOBAL RESET — THE IRON CAGE
+   Locks out ALL rubber-band / overscroll / horizontal drift
+   ════════════════════════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0; padding: 0;
+  /* Kill tap flash on every tappable surface */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+  html + body: position:fixed + overflow:hidden is the
+  definitive fix for the "page wiggle" and "background reveal".
+  The ONLY thing that scrolls is our explicit .scroll-area.
+*/
+html {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  /* Prevent iOS text size adjustment on rotate */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  /* Belt-and-suspenders: prevent any overscroll bounce from body */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
+  /* Disable double-tap zoom globally */
+  touch-action: manipulation;
+}
+
+/* Hide all scrollbars */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { display: none; }
+
+/* ════════════════════════════════════════════════════════
+   APP SHELL — fills 100% of physical screen
+   Background colour paints behind Dynamic Island & Home Bar
+   ════════════════════════════════════════════════════════ */
+.app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  /* Prevent any child from causing horizontal scroll */
+  max-width: 100%;
+}
+
+/* ════════════════════════════════════════════════════════
+   SPLASH — full bleed, over Dynamic Island
+   ════════════════════════════════════════════════════════ */
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  animation: splashOut 0.5s 1.8s forwards;
+  /* Bleed behind Dynamic Island */
+  padding-top: var(--sat);
+}
+@keyframes splashOut { to { opacity: 0; pointer-events: none; } }
+.splash-logo { font-size: 64px; animation: pulse 1s infinite alternate; }
+@keyframes pulse { from { transform: scale(1); } to { transform: scale(1.1); } }
+.splash-title {
+  font-size: 32px; font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), var(--green));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.splash-sub { font-size: 13px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+
+/* ════════════════════════════════════════════════════════
+   HEADER
+   Pushes content below the Dynamic Island pill.
+   Uses max() so it works in Safari (smaller inset) AND
+   standalone (full ~59px inset).
+   ════════════════════════════════════════════════════════ */
+.header {
+  /* Part of flex column — NOT sticky/fixed */
+  flex-shrink: 0;
+  position: relative;
+  z-index: 50;
+  background: rgba(10,11,15,0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+
+  /*
+    top padding = max(env(safe-area-inset-top), 54px)
+    54px = Dynamic Island safe minimum.
+    Side padding = gutter (accounts for curved glass edges).
+  */
+  padding-top: max(var(--sat), 54px);
+  padding-left: var(--gutter);
+  padding-right: var(--gutter-r);
+  padding-bottom: 0;
+}
+[data-theme="light"] .header {
+  background: rgba(240,242,248,0.96);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.header-title {
+  font-size: 20px; font-weight: 700; flex: 1;
+}
+.header-icon-btn {
+  width: 40px; height: 40px;
+  border-radius: 13px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  /* Prevent double-tap zoom on buttons */
+  touch-action: manipulation;
+}
+
+/* ── NAV TABS ── */
+.nav-tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 4px;
+  padding: 0 0 12px;
+  /* Allow horizontal scroll in tabs but not vertical */
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+}
+.nav-tab {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+  transition: all 0.2s;
+  white-space: nowrap;
+  font-family: 'Sora', sans-serif;
+  touch-action: manipulation;
+}
+.nav-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* ════════════════════════════════════════════════════════
+   SCROLL AREA
+   This is the ONLY element that scrolls.
+   -webkit-overflow-scrolling:touch → native momentum.
+   overscroll-behavior-y:contain    → stops scroll from
+   propagating to the shell (no background reveal).
+   ════════════════════════════════════════════════════════ */
+.scroll-area {
+  flex: 1;
+  overflow-y: scroll;          /* scroll (not auto) for iOS momentum */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* Prevent width from exceeding viewport */
+  max-width: 100%;
+  width: 100%;
+}
+
+/* ════════════════════════════════════════════════════════
+   CONTENT CONTAINER
+   Horizontal gutters account for curved iPhone glass edges.
+   Bottom padding = bottom nav height so last item isn't
+   hidden behind the nav bar.
+   ════════════════════════════════════════════════════════ */
+.content {
+  padding-top: 16px;
+  padding-left: var(--gutter);
+  padding-right: var(--gutter-r);
+  /* Content clears bottom nav + home bar + breathing room */
+  padding-bottom: calc(var(--bnav-h) + 24px);
+  max-width: 480px;
+  margin: 0 auto;
+  /* Prevent any content from overflowing sideways */
+  overflow-x: hidden;
+}
+
+/* ════════════════════════════════════════════════════════
+   BOTTOM NAV
+   Lives below the scroll area in the flex column.
+   padding-bottom = Home Bar safe area.
+   ════════════════════════════════════════════════════════ */
+.bottom-nav {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 50;
+  background: rgba(17,19,24,0.97);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  /* Home Bar clearance */
+  padding-bottom: max(var(--sab), 20px);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+[data-theme="light"] .bottom-nav {
+  background: rgba(255,255,255,0.97);
+}
+
+.bnav-item {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  padding: 10px 4px 0;
+  cursor: pointer;
+  border: none; background: transparent;
+  color: var(--muted);
+  transition: color 0.2s;
+  font-family: 'Sora', sans-serif;
+  touch-action: manipulation;
+  /* Min tap target 44×44 per Apple HIG */
+  min-height: 44px;
+}
+.bnav-icon { font-size: 22px; line-height: 1; }
+.bnav-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.bnav-item.active { color: var(--accent); }
+.bnav-item.active .bnav-icon { filter: drop-shadow(0 0 8px var(--accent)); }
+
+/* ════════════════════════════════════════════════════════
+   FAB (Floating Action Button)
+   position:fixed but offset from Home Bar and nav.
+   right gutter accounts for curved glass on right edge.
+   ════════════════════════════════════════════════════════ */
+.fab {
+  position: fixed;
+  /*
+    bottom = bnav height + 16px breathing room.
+    This ensures it floats visibly above the nav bar
+    and never clashes with the Home Bar.
+  */
+  bottom: calc(var(--bnav-h) + 16px);
+  right: max(var(--sar) + 16px, 20px);
+  z-index: 60;
+  width: 56px; height: 56px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none;
+  color: #fff;
+  font-size: 28px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(108,99,255,0.45);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+  touch-action: manipulation;
+  /* Ensure minimum 44pt target */
+  min-width: 44px; min-height: 44px;
+}
+.fab:active {
+  transform: scale(0.91);
+  box-shadow: 0 4px 12px rgba(108,99,255,0.3);
+}
+
+/* ════════════════════════════════════════════════════════
+   MODALS
+   Bottom sheet style. padding-bottom accounts for Home Bar
+   so form fields aren't hidden behind it.
+   ════════════════════════════════════════════════════════ */
+.modal-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  /* Touch outside to close — pan events still work */
+  touch-action: none;
+}
+.modal-bg.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 28px 28px 0 0;
+  width: 100%; max-width: 480px;
+  /* 90% of viewport, but leaves room for Dynamic Island */
+  max-height: calc(100dvh - max(var(--sat), 54px) - 20px);
+  overflow-y: scroll;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* Top handle + content + Home Bar safe area */
+  padding: 8px 20px max(var(--sab), 24px);
+  animation: slideUp 0.3s cubic-bezier(0.34,1.4,0.64,1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.modal-handle {
+  width: 40px; height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  margin: 12px auto 20px;
+}
+.modal-title { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+
+/* ════════════════════════════════════════════════════════
+   TOAST
+   Floats above nav bar. Accounts for Home Bar.
+   ════════════════════════════════════════════════════════ */
+.toast {
+  position: fixed;
+  bottom: calc(var(--bnav-h) + 16px);
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 13px; font-weight: 500;
+  z-index: 500;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  /* Keep within screen width with side gutters */
+  max-width: calc(100vw - 40px);
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ════════════════════════════════════════════════════════
+   CONFETTI CANVAS — full bleed including Dynamic Island
+   ════════════════════════════════════════════════════════ */
+.confetti-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9000;
+  width: 100%;
+  height: 100%;
+}
+
+/* ════════════════════════════════════════════════════════
+   PAGE LAYOUT
+   ════════════════════════════════════════════════════════ */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ════════════════════════════════════════════════════════
+   CARDS
+   ════════════════════════════════════════════════════════ */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.card2 { background: var(--card2); border-color: var(--border2); }
+
+/* ════════════════════════════════════════════════════════
+   DATE STRIP
+   touch-action:pan-x → only horizontal swipe, no vertical
+   interference with the main scroll area.
+   ════════════════════════════════════════════════════════ */
+.date-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: scroll;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  padding: 4px 0 8px;
+}
+.date-item {
+  flex-shrink: 0;
+  width: 44px; height: 62px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--card);
+  touch-action: manipulation;
+}
+.date-item.today   { background: var(--accent); border-color: var(--accent); }
+.date-item.has-done { border-color: var(--green2); }
+.date-item .d-dow  { font-size: 9px; font-weight: 600; text-transform: uppercase; color: var(--muted); }
+.date-item.today .d-dow { color: rgba(255,255,255,0.7); }
+.date-item .d-num  { font-size: 18px; font-weight: 700; }
+.date-item.today .d-num { color: #fff; }
+.date-item .d-dot  { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+/* ── PROGRESS OVERVIEW ── */
+.overview-row { display: flex; gap: 10px; margin-bottom: 12px; }
+.ov-card {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  text-align: center;
+}
+.ov-num { font-size: 28px; font-weight: 800; }
+.ov-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 2px; }
+.ov-num.g { color: var(--green); }
+.ov-num.r { color: var(--red); }
+.ov-num.a { color: var(--accent); }
+.ov-num.o { color: var(--orange); }
+
+/* ── RING ── */
+.ring-hero { display: flex; align-items: center; gap: 20px; }
+.ring-wrap { position: relative; width: 90px; height: 90px; flex-shrink: 0; }
+.ring-wrap svg { transform: rotate(-90deg); }
+.ring-center { position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; }
+.ring-pct { font-size: 20px; font-weight: 800; color: var(--green); }
+.ring-sub { font-size: 9px; color: var(--muted); text-transform: uppercase; }
+
+/* ── HABIT ITEM ── */
+.habit-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+  position: relative;
+  overflow: hidden;
+  touch-action: manipulation;
+  /* Minimum 44pt height per Apple HIG */
+  min-height: 44px;
+}
+.habit-item::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 3px 0 0 3px;
+  background: var(--habit-color, var(--accent));
+}
+.habit-item.done { opacity: 0.7; }
+.habit-item.done::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(0,217,126,0.05), transparent);
+}
+.habit-item:active { transform: scale(0.98); }
+
+.habit-icon-wrap {
+  width: 42px; height: 42px;
+  border-radius: 13px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  background: color-mix(in srgb, var(--habit-color, var(--accent)) 15%, transparent);
+}
+.habit-body { flex: 1; min-width: 0; }
+.habit-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.habit-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.habit-streak { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--orange); font-weight: 600; margin-top: 4px; }
+.habit-check {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s;
+  background: transparent;
+}
+.habit-item.done .habit-check { background: var(--habit-color, var(--green)); border-color: var(--habit-color, var(--green)); }
+.habit-prog { height: 3px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.habit-prog-fill { height: 100%; border-radius: 2px; background: var(--habit-color, var(--accent)); transition: width 0.4s; }
+
+/* ── SECTION LABEL ── */
+.sec-label {
+  font-size: 11px; font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 18px 0 10px;
+}
+
+/* ── FORMS ── */
+.form-row { display: flex; gap: 10px; }
+.form-group { margin-bottom: 14px; flex: 1; }
+.form-label {
+  font-size: 11px; font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 7px;
+  display: block;
+}
+.form-input, .form-select {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: 'Sora', sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border 0.2s;
+  -webkit-appearance: none;
+  appearance: none;
+  /* Prevent iOS auto-zoom on focus (font-size ≥ 16px alternative) */
+  font-size: 16px;
+}
+/* Restore visual size while keeping logical size ≥16px */
+.form-input::placeholder { font-size: 14px; }
+.form-input:focus, .form-select:focus { border-color: var(--accent); }
+
+.color-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.color-dot {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: all 0.15s;
+  touch-action: manipulation;
+}
+.color-dot.selected { border-color: #fff; transform: scale(1.15); }
+
+.icon-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.icon-btn {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  cursor: pointer;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  transition: all 0.15s;
+  touch-action: manipulation;
+}
+.icon-btn.selected { border-color: var(--accent); background: rgba(108,99,255,0.15); }
+
+.modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+.btn {
+  padding: 15px;
+  border-radius: 14px;
+  font-family: 'Sora', sans-serif;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  border: none;
+  flex: 1;
+  /* Min 44pt height */
+  min-height: 44px;
+  touch-action: manipulation;
+}
+.btn-primary  { background: var(--accent); color: #fff; }
+.btn-secondary { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+.btn-danger   { background: rgba(255,77,109,0.15); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+
+/* ── TOGGLE ── */
+.toggle-row {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.toggle-row:last-child { border-bottom: none; }
+.toggle-label { font-size: 14px; font-weight: 500; }
+.toggle-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.toggle-switch {
+  width: 51px; height: 31px;
+  border-radius: 16px;
+  position: relative;
+  background: var(--border2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.25s;
+  touch-action: manipulation;
+}
+.toggle-switch.on { background: var(--green); }
+.toggle-knob {
+  position: absolute; top: 3px; left: 3px;
+  width: 25px; height: 25px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.toggle-switch.on .toggle-knob { transform: translateX(20px); }
+
+/* ── TASKS ── */
+.task-item {
+  display: flex; align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  min-height: 44px;
+}
+.task-item:last-child { border-bottom: none; }
+.task-cb {
+  width: 24px; height: 24px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  border: 2px solid var(--border2);
+  background: transparent;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  transition: all 0.15s;
+  touch-action: manipulation;
+}
+.task-cb.done { background: var(--accent); border-color: var(--accent); }
+.task-body { flex: 1; min-width: 0; }
+.task-name { font-size: 14px; font-weight: 500; }
+.task-name.done { text-decoration: line-through; color: var(--muted); }
+.task-time { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.task-priority { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.task-del { font-size: 20px; cursor: pointer; color: var(--muted); padding: 8px; touch-action: manipulation; }
+
+/* ── TIMER ── */
+.timer-display {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 60px; font-weight: 500;
+  text-align: center; color: var(--text);
+  letter-spacing: 0.02em; line-height: 1;
+}
+.timer-sub { text-align: center; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.timer-btns { display: flex; gap: 12px; justify-content: center; margin-top: 28px; }
+.timer-btn {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  border: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+  cursor: pointer;
+  transition: transform 0.15s;
+  touch-action: manipulation;
+}
+.timer-btn:active { transform: scale(0.9); }
+.timer-btn.main {
+  background: var(--accent); color: #fff;
+  width: 80px; height: 80px; font-size: 32px;
+  box-shadow: 0 8px 24px rgba(108,99,255,0.4);
+}
+.timer-btn.stop { background: var(--card); color: var(--red); border: 1px solid var(--border); }
+.timer-btn.lap  { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+
+/* ── ANALYTICS ── */
+.chart-bar-row { display: flex; align-items: flex-end; gap: 6px; height: 100px; padding: 0 4px; }
+.chart-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.chart-bar { width: 100%; border-radius: 6px 6px 0 0; transition: height 0.5s ease; min-height: 4px; }
+.chart-day { font-size: 9px; color: var(--muted); text-transform: uppercase; }
+
+/* PIE */
+.pie-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
+.pie-legend { display: flex; flex-direction: column; gap: 8px; }
+.pie-leg-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.pie-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+/* ── CALENDAR ── */
+.cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
+.cal-header { font-size: 10px; font-weight: 700; color: var(--muted); text-align: center; text-transform: uppercase; padding: 4px 0; }
+.cal-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 500;
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  touch-action: manipulation;
+  /* Minimum tap target */
+  min-height: 38px;
+}
+.cal-cell.today    { background: var(--accent); color: #fff; border-color: var(--accent); }
+.cal-cell.has-habit { color: var(--text); border-color: var(--border2); }
+.cal-cell .cal-dot {
+  position: absolute; bottom: 3px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 4px;
+  border-radius: 50%; background: var(--green);
+}
+.cal-cell.empty { background: transparent; border-color: transparent; }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.cal-nav-btn {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 16px;
+  cursor: pointer; font-size: 18px; color: var(--text);
+  touch-action: manipulation; min-height: 44px;
+}
+.cal-month { font-size: 16px; font-weight: 700; }
+
+/* ── NOTES ── */
+.note-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px; margin-bottom: 10px;
+}
+.note-date { font-size: 10px; color: var(--muted); margin-bottom: 6px; font-family: 'JetBrains Mono', monospace; }
+.note-text { font-size: 13px; line-height: 1.6; }
+.note-textarea {
+  width: 100%; min-height: 100px; padding: 12px;
+  background: var(--card); border: 1.5px solid var(--border);
+  border-radius: 12px; color: var(--text);
+  font-family: 'Sora', sans-serif;
+  font-size: 16px; outline: none; resize: vertical;
+}
+
+/* ── SETTINGS ── */
+.settings-section { margin-bottom: 20px; }
+.settings-section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+.theme-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+.theme-opt {
+  flex: 1; min-width: 80px; padding: 14px 8px;
+  border-radius: 14px; border: 2px solid var(--border);
+  text-align: center; cursor: pointer;
+  font-size: 12px; font-weight: 600;
+  transition: all 0.15s; background: var(--card);
+  touch-action: manipulation;
+}
+.theme-opt.active { border-color: var(--accent); color: var(--accent); }
+.theme-icon { font-size: 24px; margin-bottom: 6px; }
+
+.export-btn {
+  width: 100%; padding: 15px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--card), var(--card2));
+  border: 1px solid var(--border2); color: var(--text);
+  font-family: 'Sora', sans-serif;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px;
+  transition: opacity 0.2s;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+.export-btn:active { opacity: 0.75; }
+
+/* ── STREAK BADGE ── */
+.streak-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(255,140,66,0.15); border: 1px solid rgba(255,140,66,0.3);
+  border-radius: 20px; padding: 4px 10px;
+  font-size: 12px; color: var(--orange); font-weight: 700;
+}
+
+/* ── CHIP ── */
+.chip {
+  display: inline-block; padding: 6px 12px;
+  border-radius: 20px; font-size: 11px; font-weight: 600;
+  background: var(--card); border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer;
+  transition: all 0.15s; white-space: nowrap;
+  touch-action: manipulation;
+  min-height: 32px; /* comfortable tap height */
+}
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ── INTERVAL TIMER ── */
+.interval-phase {
+  text-align: center; padding: 20px;
+  border-radius: 20px; margin-bottom: 16px;
+  transition: background 0.4s;
+}
+.interval-phase.work { background: rgba(0,217,126,0.1); border: 1px solid rgba(0,217,126,0.2); }
+.interval-phase.rest { background: rgba(108,99,255,0.1); border: 1px solid rgba(108,99,255,0.2); }
+.phase-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+.interval-phase.work .phase-label { color: var(--green); }
+.interval-phase.rest .phase-label { color: var(--accent); }
+
+/* ── LAP LIST ── */
+.lap-item {
+  display: flex; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px; font-family: 'JetBrains Mono', monospace;
+}
+.lap-num { color: var(--muted); }
+.lap-time { color: var(--text); }
+
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-logo">🌊</div>
+  <div class="splash-title">HabitFlow</div>
+  <div class="splash-sub">Build · Track · Grow</div>
+</div>
+
+<!-- CONFETTI -->
+<canvas class="confetti-canvas" id="confettiCanvas"></canvas>
+
+<!-- ═══════════════════════════════════════════════════════
+     APP SHELL
+     ═══════════════════════════════════════════════════════ -->
+<div class="app">
+
+  <!-- HEADER — padded below Dynamic Island -->
+  <div class="header" id="mainHeader">
+    <div class="header-inner">
+      <div class="header-title" id="headerTitle">Today</div>
+      <div class="header-icon-btn" onclick="openSearch()">🔍</div>
+      <div class="header-icon-btn" onclick="toggleTheme()" id="themeBtn">🌙</div>
+      <div class="header-icon-btn" onclick="openNotifModal()">🔔</div>
+    </div>
+    <div class="nav-tabs" id="navTabs"></div>
+  </div>
+
+  <!-- SCROLL AREA — only this element scrolls -->
+  <div class="scroll-area" id="scrollArea">
+    <div class="content" id="mainContent">
+
+      <!-- ── HABITS PAGE ── -->
+      <div class="page active" id="page-habits">
+        <div class="date-strip" id="dateStrip"></div>
+        <div class="ring-hero card" id="overviewCard">
+          <div class="ring-wrap">
+            <svg width="90" height="90" viewBox="0 0 90 90">
+              <circle cx="45" cy="45" r="35" fill="none" stroke="var(--border2)" stroke-width="9"/>
+              <circle id="ringArc" cx="45" cy="45" r="35" fill="none" stroke="var(--green)" stroke-width="9"
+                stroke-dasharray="219.9" stroke-dashoffset="219.9" stroke-linecap="round"
+                style="transition:stroke-dashoffset 0.7s ease"/>
+            </svg>
+            <div class="ring-center">
+              <div class="ring-pct" id="ringPct">0%</div>
+              <div class="ring-sub">Done</div>
+            </div>
+          </div>
+          <div style="flex:1">
+            <div class="overview-row" style="margin-bottom:8px">
+              <div class="ov-card" style="padding:10px"><div class="ov-num g" id="ovDone">0</div><div class="ov-lbl">Done</div></div>
+              <div class="ov-card" style="padding:10px"><div class="ov-num r" id="ovLeft">0</div><div class="ov-lbl">Left</div></div>
+              <div class="ov-card" style="padding:10px"><div class="ov-num o" id="ovStreak">0</div><div class="ov-lbl">Streak</div></div>
+            </div>
+            <div style="font-size:11px;color:var(--muted)" id="selectedDateLabel">Today</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;touch-action:pan-x;overscroll-behavior-x:contain" id="catFilter"></div>
+        <div id="habitList"></div>
+        <div id="emptyHabits" style="text-align:center;padding:40px 0;display:none">
+          <div style="font-size:48px;margin-bottom:12px">🌱</div>
+          <div style="font-size:16px;font-weight:600;margin-bottom:6px">No habits yet</div>
+          <div style="font-size:13px;color:var(--muted)">Tap + to create your first habit</div>
+        </div>
+      </div>
+
+      <!-- ── TASKS PAGE ── -->
+      <div class="page" id="page-tasks">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-size:18px;font-weight:700" id="taskDateLabel">Today's Tasks</div>
+            <div style="font-size:12px;color:var(--muted)" id="taskCountLabel">0 tasks</div>
+          </div>
+          <button class="btn btn-primary" style="width:auto;padding:10px 16px;font-size:13px" onclick="openTaskModal()">+ Task</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;touch-action:pan-x">
+          <span class="chip active" onclick="filterTasks('all',this)">All</span>
+          <span class="chip" onclick="filterTasks('high',this)">🔴 High</span>
+          <span class="chip" onclick="filterTasks('med',this)">🟡 Med</span>
+          <span class="chip" onclick="filterTasks('low',this)">🟢 Low</span>
+        </div>
+        <div class="card" id="taskList" style="padding:4px 16px"></div>
+        <div id="emptyTasks" style="text-align:center;padding:40px 0;display:none">
+          <div style="font-size:48px">✅</div>
+          <div style="font-size:16px;font-weight:600;margin-top:12px">All clear!</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:6px">Add tasks to stay organized</div>
+        </div>
+      </div>
+
+      <!-- ── TIMER PAGE ── -->
+      <div class="page" id="page-timer">
+        <div style="display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;touch-action:pan-x">
+          <span class="chip active" onclick="setTimerMode('stopwatch',this)">⏱ Stopwatch</span>
+          <span class="chip" onclick="setTimerMode('countdown',this)">⏳ Countdown</span>
+          <span class="chip" onclick="setTimerMode('interval',this)">🔄 Interval</span>
+        </div>
+        <div id="timerMain" class="card" style="padding:32px 20px;text-align:center">
+          <div class="timer-display" id="timerDisplay">00:00:00</div>
+          <div class="timer-sub" id="timerSub">Stopwatch</div>
+          <div id="countdownSetup" style="display:none;margin-top:20px">
+            <div class="form-row" style="justify-content:center;gap:8px">
+              <input type="number" class="form-input" id="cdHours" placeholder="HH" min="0" max="23" style="width:70px;text-align:center;font-weight:700">
+              <div style="font-size:28px;font-weight:700;align-self:center;color:var(--muted)">:</div>
+              <input type="number" class="form-input" id="cdMins" placeholder="MM" min="0" max="59" style="width:70px;text-align:center;font-weight:700">
+              <div style="font-size:28px;font-weight:700;align-self:center;color:var(--muted)">:</div>
+              <input type="number" class="form-input" id="cdSecs" placeholder="SS" min="0" max="59" style="width:70px;text-align:center;font-weight:700">
+            </div>
+          </div>
+          <div class="timer-btns">
+            <button class="timer-btn stop" onclick="timerReset()">↺</button>
+            <button class="timer-btn main" id="timerStart" onclick="timerToggle()">▶</button>
+            <button class="timer-btn lap" onclick="timerLap()">◎</button>
+          </div>
+        </div>
+        <div id="intervalTimer" style="display:none">
+          <div class="interval-phase work" id="intervalPhaseCard">
+            <div class="phase-label" id="intervalPhaseLabel">WORK</div>
+            <div class="timer-display" id="intervalDisplay">00:00</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:6px" id="intervalRoundLabel">Round 1 / 1</div>
+          </div>
+          <div class="card" style="margin-bottom:12px">
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Work (sec)</label><input type="number" class="form-input" id="itWork" value="25" min="1"></div>
+              <div class="form-group"><label class="form-label">Rest (sec)</label><input type="number" class="form-input" id="itRest" value="5" min="1"></div>
+              <div class="form-group"><label class="form-label">Rounds</label><input type="number" class="form-input" id="itRounds" value="4" min="1"></div>
+            </div>
+          </div>
+          <div class="timer-btns">
+            <button class="timer-btn stop" onclick="intervalReset()">↺</button>
+            <button class="timer-btn main" id="intervalStart" onclick="intervalToggle()">▶</button>
+          </div>
+        </div>
+        <div id="lapsSection" style="display:none;margin-top:16px">
+          <div class="sec-label">Laps</div>
+          <div class="card" id="lapsList" style="padding:4px 16px;max-height:200px;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- ── ANALYTICS PAGE ── -->
+      <div class="page" id="page-analytics">
+        <div class="sec-label">Weekly Performance</div>
+        <div class="card" style="padding:20px 16px">
+          <div class="chart-bar-row" id="weekChart"></div>
+        </div>
+        <div class="sec-label">Today's Progress</div>
+        <div style="display:flex;gap:10px;align-items:center" class="card">
+          <div class="pie-wrap">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border2)" stroke-width="18"/>
+              <circle cx="50" cy="50" r="40" fill="none" stroke="var(--green)" stroke-width="18"
+                stroke-dasharray="251.2" stroke-dashoffset="251.2" stroke-linecap="butt"
+                id="pieDone" style="transform:rotate(-90deg);transform-origin:50px 50px;transition:stroke-dashoffset 0.6s"/>
+            </svg>
+          </div>
+          <div class="pie-legend">
+            <div class="pie-leg-item"><div class="pie-dot" style="background:var(--green)"></div><span>Completed: <b id="statDone">0</b></span></div>
+            <div class="pie-leg-item"><div class="pie-dot" style="background:var(--border2)"></div><span>Remaining: <b id="statLeft">0</b></span></div>
+            <div class="pie-leg-item"><div class="pie-dot" style="background:var(--orange)"></div><span>Best Streak: <b id="statStreak">0</b></span></div>
+            <div class="pie-leg-item"><div class="pie-dot" style="background:var(--accent)"></div><span>Monthly: <b id="statMonthly">0%</b></span></div>
+          </div>
+        </div>
+        <div class="sec-label">Habit Success Rates</div>
+        <div id="habitStats"></div>
+        <div class="sec-label">Top Performers</div>
+        <div id="topPerformers"></div>
+      </div>
+
+      <!-- ── CALENDAR PAGE ── -->
+      <div class="page" id="page-calendar">
+        <div class="cal-nav card">
+          <button class="cal-nav-btn" onclick="calPrev()">‹</button>
+          <div class="cal-month" id="calMonthLabel"></div>
+          <button class="cal-nav-btn" onclick="calNext()">›</button>
+        </div>
+        <div class="card"><div class="cal-grid" id="calGrid"></div></div>
+        <div class="sec-label">Selected Day Summary</div>
+        <div class="card" id="calDaySummary">
+          <div style="color:var(--muted);font-size:13px">Tap a date to see details</div>
+        </div>
+      </div>
+
+      <!-- ── NOTES PAGE ── -->
+      <div class="page" id="page-notes">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="font-size:18px;font-weight:700">Daily Notes</div>
+          <button class="btn btn-primary" style="width:auto;padding:10px 16px;font-size:13px" onclick="openNoteModal()">+ Note</button>
+        </div>
+        <div id="notesList"></div>
+        <div id="emptyNotes" style="text-align:center;padding:40px 0">
+          <div style="font-size:48px">📝</div>
+          <div style="font-size:16px;font-weight:600;margin-top:12px">No notes yet</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:6px">Document your journey</div>
+        </div>
+      </div>
+
+      <!-- ── SETTINGS PAGE ── -->
+      <div class="page" id="page-settings">
+        <div class="settings-section">
+          <div class="settings-section-title">Appearance</div>
+          <div class="theme-grid">
+            <div class="theme-opt active" id="theme-dark" onclick="setTheme('dark')"><div class="theme-icon">🌙</div>Dark</div>
+            <div class="theme-opt" id="theme-light" onclick="setTheme('light')"><div class="theme-icon">☀️</div>Light</div>
+            <div class="theme-opt" id="theme-amoled" onclick="setTheme('amoled')"><div class="theme-icon">⚫</div>AMOLED</div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Data</div>
+          <button class="export-btn" onclick="exportData()" style="margin-bottom:10px">📤 Export Data (JSON)</button>
+          <button class="export-btn" onclick="exportCSV()">📊 Export as CSV</button>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Notifications</div>
+          <div class="card">
+            <div class="toggle-row">
+              <div><div class="toggle-label">Daily Reminder</div><div class="toggle-sub">Get reminded each day</div></div>
+              <div class="toggle-switch" id="toggle-reminder" onclick="toggleSwitch(this)"><div class="toggle-knob"></div></div>
+            </div>
+            <div class="toggle-row">
+              <div><div class="toggle-label">Streak Alerts</div><div class="toggle-sub">Don't break your streak</div></div>
+              <div class="toggle-switch on" id="toggle-streak" onclick="toggleSwitch(this)"><div class="toggle-knob"></div></div>
+            </div>
+            <div class="toggle-row">
+              <div><div class="toggle-label">Weekly Report</div><div class="toggle-sub">Sunday summary</div></div>
+              <div class="toggle-switch" id="toggle-weekly" onclick="toggleSwitch(this)"><div class="toggle-knob"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Backup</div>
+          <button class="export-btn" onclick="backupData()" style="margin-bottom:10px">☁️ Backup to File</button>
+          <button class="export-btn" onclick="document.getElementById('restoreInput').click()">📥 Restore from Backup</button>
+          <input type="file" id="restoreInput" accept=".json" style="display:none" onchange="restoreBackup(event)">
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Danger Zone</div>
+          <button class="btn btn-danger" onclick="clearAllData()" style="width:100%">🗑 Clear All Data</button>
+        </div>
+        <div style="text-align:center;padding:20px 0;font-size:12px;color:var(--muted)">
+          HabitFlow v2.0 · Optimized for iPhone 14 Pro
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /scroll-area -->
+
+  <!-- BOTTOM NAV — padded above Home Bar -->
+  <div class="bottom-nav" id="bottomNav"></div>
+
+</div><!-- /app -->
+
+<!-- FAB -->
+<button class="fab" id="mainFab" onclick="fabAction()">＋</button>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MODALS
+     ═══════════════════════════════════════════════════════ -->
+
+<!-- HABIT MODAL -->
+<div class="modal-bg" id="habitModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="habitModalTitle">New Habit</div>
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input class="form-input" id="hName" placeholder="e.g. Morning Meditation" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select class="form-select" id="hCategory">
+          <option>Health</option><option>Work</option><option>Fitness</option>
+          <option>Meditation</option><option>Learning</option><option>Social</option>
+          <option>Finance</option><option>Sleep</option><option>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-select" id="hType">
+          <option value="positive">✅ Positive</option>
+          <option value="negative">🚫 Negative</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Frequency</label>
+        <select class="form-select" id="hFreq">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Goal / Month</label>
+        <input class="form-input" type="number" id="hGoal" value="30" min="1" max="365" inputmode="numeric">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Note / Time</label>
+      <input class="form-input" id="hNote" placeholder="e.g. 7:00 AM, before breakfast">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Icon</label>
+      <div class="icon-grid" id="iconPicker"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Color</label>
+      <div class="color-grid" id="colorPicker"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('habitModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveHabit()">Save Habit</button>
+    </div>
+    <div id="editHabitActions" style="display:none;margin-top:10px">
+      <button class="btn btn-danger" style="width:100%" onclick="deleteHabit()">Delete Habit</button>
+    </div>
+  </div>
+</div>
+
+<!-- TASK MODAL -->
+<div class="modal-bg" id="taskModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">New Task</div>
+    <div class="form-group">
+      <label class="form-label">Task Name</label>
+      <input class="form-input" id="tName" placeholder="e.g. Review project docs">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <select class="form-select" id="tPriority">
+          <option value="high">🔴 High</option>
+          <option value="med">🟡 Medium</option>
+          <option value="low">🟢 Low</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Time</label>
+        <input class="form-input" type="time" id="tTime">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Date</label>
+      <input class="form-input" type="date" id="tDate">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('taskModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTask()">Add Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTE MODAL -->
+<div class="modal-bg" id="noteModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">New Note</div>
+    <div class="form-group">
+      <label class="form-label">Your Note</label>
+      <textarea class="note-textarea" id="noteText" placeholder="How was your day? What did you accomplish?"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('noteModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNote()">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIF MODAL -->
+<div class="modal-bg" id="notifModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Reminders</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Set a daily reminder to check your habits</div>
+    <div class="form-group">
+      <label class="form-label">Reminder Time</label>
+      <input class="form-input" type="time" id="reminderTime" value="08:00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Message</label>
+      <input class="form-input" id="reminderMsg" value="Time to check your habits! 🌊">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('notifModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="scheduleReminder()">Set Reminder</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     JAVASCRIPT — All logic preserved from original
+     ═══════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+const COLORS = ['#6c63ff','#00d97e','#ff4d6d','#ff8c42','#ffd166','#06d6a0','#4fc3f7','#f72585','#7209b7','#3a86ff'];
+const ICONS  = ['🏃','🧘','💧','📚','💪','🥗','😴','🧠','✍️','🎯','🏋️','🚴','🧹','💊','🌱','☕','🎨','🎵','🏊','🧃','🚶','🍎','🥤','📖','💰','🧘‍♀️','🌅','🌙','❤️','⚡'];
+const DAYS7  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// ── DATA ─────────────────────────────────────────────────────────────────────
+function loadDB() { try { const r=localStorage.getItem('hf2'); return r?JSON.parse(r):null; } catch(e){return null;} }
+function saveDB() { try { localStorage.setItem('hf2',JSON.stringify(DB)); } catch(e){} }
+
+const DB_DEFAULT = { habits:[], tasks:[], notes:[], logs:{}, settings:{theme:'dark'}, nextId:1 };
+let DB = loadDB() || JSON.parse(JSON.stringify(DB_DEFAULT));
+if(!DB.notes) DB.notes=[];
+if(!DB.tasks) DB.tasks=[];
+if(!DB.settings) DB.settings={theme:'dark'};
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function pad(n){ return String(n).padStart(2,'0'); }
+function fmtDate(d){ const dt=new Date(d); return `${MONTHS[dt.getMonth()].slice(0,3)} ${dt.getDate()}, ${dt.getFullYear()}`; }
+function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
+function monthDates(y,m){ const a=[]; for(let d=1;d<=daysInMonth(y,m);d++) a.push(`${y}-${pad(m+1)}-${pad(d)}`); return a; }
+function isDone(id,ds){ return !!DB.logs[`${id}:${ds}`]; }
+function setDone(id,ds,v){ const k=`${id}:${ds}`; if(v) DB.logs[k]=true; else delete DB.logs[k]; saveDB(); }
+function getStreak(h){ let s=0,d=new Date(); while(true){ const ds=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; if(isDone(h.id,ds)){s++;d.setDate(d.getDate()-1);}else break; if(s>365)break; } return s; }
+function getBestStreak(h){ let b=0,c=0; const now=new Date(),all=[]; for(let i=89;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);all.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);} all.forEach(ds=>{if(isDone(h.id,ds)){c++;b=Math.max(b,c);}else c=0;}); return b; }
+
+// ── NAV ───────────────────────────────────────────────────────────────────────
+const PAGES=[
+  {id:'habits',   icon:'🏠',label:'Habits',  tabs:['All','Health','Work','Fitness','Meditation','Learning','Other']},
+  {id:'tasks',    icon:'✅',label:'Tasks',   tabs:[]},
+  {id:'timer',    icon:'⏱',label:'Timer',   tabs:[]},
+  {id:'analytics',icon:'📊',label:'Stats',   tabs:[]},
+  {id:'calendar', icon:'📅',label:'Calendar',tabs:[]},
+  {id:'notes',    icon:'📝',label:'Notes',   tabs:[]},
+  {id:'settings', icon:'⚙️',label:'Settings',tabs:[]},
+];
+let activePage='habits', activeTab='All', selectedDate=todayStr();
+
+function buildNav(){
+  const bn=document.getElementById('bottomNav');
+  bn.innerHTML=PAGES.map(p=>`
+    <button class="bnav-item ${p.id===activePage?'active':''}" onclick="goPage('${p.id}')">
+      <span class="bnav-icon">${p.icon}</span>
+      <span class="bnav-label">${p.label}</span>
+    </button>`).join('');
+  buildTabs();
+}
+function buildTabs(){
+  const pg=PAGES.find(p=>p.id===activePage);
+  const nt=document.getElementById('navTabs');
+  if(!pg||!pg.tabs.length){nt.innerHTML='';return;}
+  nt.innerHTML=pg.tabs.map(t=>`<button class="nav-tab ${t===activeTab?'active':''}" onclick="goTab('${t}')">${t}</button>`).join('');
+}
+function goPage(id){
+  activePage=id;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  document.getElementById('headerTitle').textContent=PAGES.find(p=>p.id===id).label;
+  document.getElementById('mainFab').style.display=['habits','tasks','notes'].includes(id)?'flex':'none';
+  // Scroll back to top on page change
+  document.getElementById('scrollArea').scrollTop=0;
+  buildNav();
+  renderPage(id);
+}
+function goTab(t){ activeTab=t; buildTabs(); renderPage(activePage); }
+function fabAction(){
+  if(activePage==='habits') openHabitModal();
+  else if(activePage==='tasks') openTaskModal();
+  else if(activePage==='notes') openNoteModal();
+}
+
+// ── RENDER DISPATCH ───────────────────────────────────────────────────────────
+function renderPage(id){
+  if(id==='habits')    renderHabits();
+  if(id==='tasks')     renderTasks();
+  if(id==='analytics') renderAnalytics();
+  if(id==='calendar')  renderCalendar();
+  if(id==='notes')     renderNotes();
+}
+
+// ── HABITS ────────────────────────────────────────────────────────────────────
+function renderHabits(){ renderDateStrip(); renderCatFilter(); renderHabitList(); updateOverview(); }
+
+function renderDateStrip(){
+  const strip=document.getElementById('dateStrip');
+  const now=new Date(),y=now.getFullYear(),m=now.getMonth();
+  const days=daysInMonth(y,m);
+  let html='';
+  for(let d=1;d<=days;d++){
+    const ds=`${y}-${pad(m+1)}-${pad(d)}`;
+    const dt=new Date(y,m,d);
+    const isT=ds===todayStr(),isSel=ds===selectedDate;
+    const hasDone=DB.habits.some(h=>isDone(h.id,ds));
+    html+=`<div class="date-item ${isT?'today':''} ${hasDone&&!isT?'has-done':''}" 
+      style="${isSel&&!isT?'border-color:var(--accent-2,#8b84ff);outline:2px solid var(--accent)':''}"
+      onclick="selectDate('${ds}')">
+      <div class="d-dow">${DAYS7[dt.getDay()]}</div>
+      <div class="d-num">${d}</div>
+      ${hasDone?'<div class="d-dot"></div>':''}
+    </div>`;
+  }
+  strip.innerHTML=html;
+  setTimeout(()=>{ const el=strip.children[parseInt(selectedDate.split('-')[2])-1]; if(el) el.scrollIntoView({block:'nearest',inline:'center'}); },60);
+}
+function selectDate(ds){ selectedDate=ds; renderHabits(); }
+
+function renderCatFilter(){
+  const cats=['All','Health','Work','Fitness','Meditation','Learning','Social','Finance','Sleep','Other'];
+  document.getElementById('catFilter').innerHTML=cats.map(c=>`<span class="chip ${c===activeTab?'active':''}" onclick="goTab('${c}')">${c}</span>`).join('');
+}
+
+function renderHabitList(){
+  const list=document.getElementById('habitList');
+  const empty=document.getElementById('emptyHabits');
+  let habits=DB.habits;
+  if(activeTab!=='All') habits=habits.filter(h=>h.category===activeTab);
+  if(!habits.length){ list.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  const now=new Date(),y=now.getFullYear(),mo=now.getMonth();
+  const mDates=monthDates(y,mo);
+  list.innerHTML=habits.map(h=>{
+    const done=isDone(h.id,selectedDate);
+    const streak=getStreak(h);
+    const mDone=mDates.filter(d=>isDone(h.id,d)).length;
+    const mPct=h.goal?Math.round(mDone/h.goal*100):0;
+    return `<div class="habit-item ${done?'done':''}" style="--habit-color:${h.color}" onclick="toggleHabit('${h.id}',event)" data-id="${h.id}">
+      <div class="habit-icon-wrap">${h.icon||'⭐'}</div>
+      <div class="habit-body">
+        <div class="habit-name">${h.name}${h.type==='negative'?' 🚫':''}</div>
+        <div class="habit-meta">${h.category}${h.note?' · '+h.note:''}</div>
+        ${streak>0?`<div class="habit-streak">🔥 ${streak} day streak</div>`:''}
+        <div class="habit-prog"><div class="habit-prog-fill" style="width:${Math.min(100,mPct)}%"></div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="habit-check">${done?'✓':''}</div>
+        <div style="font-size:10px;color:var(--muted)">${mDone}/${h.goal}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Long-press → edit
+  document.querySelectorAll('.habit-item').forEach(el=>{
+    let t;
+    el.addEventListener('touchstart',()=>{ t=setTimeout(()=>editHabit(el.dataset.id),600); },{passive:true});
+    el.addEventListener('touchend',  ()=>clearTimeout(t),{passive:true});
+    el.addEventListener('touchmove', ()=>clearTimeout(t),{passive:true});
+  });
+}
+
+function toggleHabit(id,e){
+  e.stopPropagation();
+  const h=DB.habits.find(h=>h.id==id); if(!h) return;
+  const was=isDone(id,selectedDate);
+  setDone(id,selectedDate,!was);
+  if(!was){
+    showToast(`✅ ${h.name} done!`);
+    const streak=getStreak(h);
+    if(streak>0&&streak%7===0){ showToast(`🔥 ${streak} day streak on ${h.name}!`); launchConfetti(); }
+    const allDone=DB.habits.filter(hb=>hb.frequency==='daily').every(hb=>isDone(hb.id,selectedDate));
+    if(allDone&&DB.habits.length>0) launchConfetti();
+  }
+  renderHabits();
+}
+
+function updateOverview(){
+  const habits=DB.habits;
+  const done=habits.filter(h=>isDone(h.id,selectedDate)).length;
+  const total=habits.length;
+  const pct=total?Math.round(done/total*100):0;
+  const circ=219.9;
+  document.getElementById('ringArc').style.strokeDashoffset=circ-(pct/100)*circ;
+  document.getElementById('ringPct').textContent=pct+'%';
+  document.getElementById('ovDone').textContent=done;
+  document.getElementById('ovLeft').textContent=total-done;
+  let maxStreak=0;
+  DB.habits.forEach(h=>{ const s=getStreak(h); if(s>maxStreak) maxStreak=s; });
+  document.getElementById('ovStreak').textContent=maxStreak;
+  const isToday=selectedDate===todayStr();
+  const dt=new Date(selectedDate);
+  document.getElementById('selectedDateLabel').textContent=isToday?'Today':`${MONTHS[dt.getMonth()].slice(0,3)} ${dt.getDate()}`;
+}
+
+// ── HABIT CRUD ────────────────────────────────────────────────────────────────
+let editingHabitId=null,selIcon=ICONS[0],selColor=COLORS[0];
+
+function openHabitModal(id=null){
+  editingHabitId=id;
+  document.getElementById('habitModalTitle').textContent=id?'Edit Habit':'New Habit';
+  document.getElementById('editHabitActions').style.display=id?'block':'none';
+  if(id){
+    const h=DB.habits.find(h=>h.id==id);
+    document.getElementById('hName').value=h.name;
+    document.getElementById('hCategory').value=h.category||'Health';
+    document.getElementById('hType').value=h.type||'positive';
+    document.getElementById('hFreq').value=h.frequency||'daily';
+    document.getElementById('hGoal').value=h.goal||30;
+    document.getElementById('hNote').value=h.note||'';
+    selIcon=h.icon||ICONS[0]; selColor=h.color||COLORS[0];
+  } else {
+    document.getElementById('hName').value='';
+    document.getElementById('hNote').value='';
+    document.getElementById('hGoal').value=30;
+    selIcon=ICONS[0]; selColor=COLORS[0];
+  }
+  buildIconPicker(); buildColorPicker();
+  document.getElementById('habitModal').classList.add('open');
+}
+function editHabit(id){ openHabitModal(id); }
+function buildIconPicker(){ document.getElementById('iconPicker').innerHTML=ICONS.map(ic=>`<div class="icon-btn ${ic===selIcon?'selected':''}" onclick="pickIcon('${ic}')">${ic}</div>`).join(''); }
+function buildColorPicker(){ document.getElementById('colorPicker').innerHTML=COLORS.map(c=>`<div class="color-dot ${c===selColor?'selected':''}" style="background:${c}" onclick="pickColor('${c}')"></div>`).join(''); }
+function pickIcon(ic){ selIcon=ic; buildIconPicker(); }
+function pickColor(c){ selColor=c; buildColorPicker(); }
+
+function saveHabit(){
+  const name=document.getElementById('hName').value.trim();
+  if(!name){ showToast('Please enter a habit name'); return; }
+  if(editingHabitId){
+    const h=DB.habits.find(h=>h.id==editingHabitId);
+    Object.assign(h,{name,category:document.getElementById('hCategory').value,type:document.getElementById('hType').value,frequency:document.getElementById('hFreq').value,goal:parseInt(document.getElementById('hGoal').value)||30,note:document.getElementById('hNote').value.trim(),icon:selIcon,color:selColor});
+  } else {
+    DB.habits.push({id:DB.nextId++,name,category:document.getElementById('hCategory').value,type:document.getElementById('hType').value,frequency:document.getElementById('hFreq').value,goal:parseInt(document.getElementById('hGoal').value)||30,note:document.getElementById('hNote').value.trim(),icon:selIcon,color:selColor,createdAt:todayStr()});
+  }
+  saveDB(); closeModal('habitModal'); renderHabits();
+  showToast(editingHabitId?'Habit updated!':'Habit created! 🎉');
+}
+function deleteHabit(){
+  if(!confirm('Delete this habit?')) return;
+  DB.habits=DB.habits.filter(h=>h.id!=editingHabitId);
+  Object.keys(DB.logs).forEach(k=>{ if(k.startsWith(editingHabitId+':')) delete DB.logs[k]; });
+  saveDB(); closeModal('habitModal'); renderHabits(); showToast('Habit deleted');
+}
+
+// ── TASKS ─────────────────────────────────────────────────────────────────────
+let taskFilter='all';
+function openTaskModal(){ document.getElementById('tDate').value=todayStr(); document.getElementById('taskModal').classList.add('open'); }
+function saveTask(){
+  const name=document.getElementById('tName').value.trim();
+  if(!name){ showToast('Enter task name'); return; }
+  DB.tasks.push({id:DB.nextId++,name,priority:document.getElementById('tPriority').value,time:document.getElementById('tTime').value,date:document.getElementById('tDate').value,done:false});
+  document.getElementById('tName').value='';
+  saveDB(); closeModal('taskModal'); renderTasks(); showToast('Task added!');
+}
+function filterTasks(f,el){ taskFilter=f; document.querySelectorAll('#page-tasks .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderTasks(); }
+function renderTasks(){
+  const priColor={high:'var(--red)',med:'var(--yellow)',low:'var(--green)'};
+  const empty=document.getElementById('emptyTasks');
+  const list=document.getElementById('taskList');
+  let tasks=DB.tasks;
+  if(taskFilter!=='all') tasks=tasks.filter(t=>t.priority===taskFilter);
+  document.getElementById('taskDateLabel').textContent='Tasks';
+  document.getElementById('taskCountLabel').textContent=`${DB.tasks.filter(t=>!t.done).length} pending · ${DB.tasks.filter(t=>t.done).length} done`;
+  if(!tasks.length){ list.innerHTML='<div style="padding:20px 0;color:var(--muted);text-align:center;font-size:13px">No tasks</div>'; empty.style.display='block'; return; }
+  empty.style.display='none';
+  list.innerHTML=tasks.sort((a,b)=>({high:0,med:1,low:2}[a.priority]-{high:0,med:1,low:2}[b.priority])).map(t=>`
+    <div class="task-item">
+      <div class="task-cb ${t.done?'done':''}" onclick="toggleTask(${t.id})">${t.done?'✓':''}</div>
+      <div class="task-body">
+        <div class="task-name ${t.done?'done':''}">${t.name}</div>
+        ${t.time||t.date?`<div class="task-time">${t.date?fmtDate(t.date):''}${t.time?' · '+t.time:''}</div>`:''}
+      </div>
+      <div class="task-priority" style="background:${priColor[t.priority]}"></div>
+      <div class="task-del" onclick="deleteTask(${t.id})">×</div>
+    </div>`).join('');
+}
+function toggleTask(id){ const t=DB.tasks.find(t=>t.id==id); if(t){t.done=!t.done;saveDB();renderTasks();showToast(t.done?'Task done! ✅':'Task reopened');} }
+function deleteTask(id){ DB.tasks=DB.tasks.filter(t=>t.id!=id); saveDB(); renderTasks(); }
+
+// ── TIMER ─────────────────────────────────────────────────────────────────────
+let timerMode='stopwatch',timerRunning=false,timerInterval=null,timerSecs=0,timerLaps=[],cdTotal=0;
+let itRunning=false,itInterval=null,itPhase='work',itRound=1,itSecs=0;
+
+function setTimerMode(m,el){
+  timerMode=m;
+  document.querySelectorAll('#page-timer .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active');
+  timerReset();
+  document.getElementById('timerMain').style.display=m==='interval'?'none':'block';
+  document.getElementById('intervalTimer').style.display=m==='interval'?'block':'none';
+  document.getElementById('countdownSetup').style.display=m==='countdown'?'block':'none';
+  document.getElementById('timerSub').textContent=m==='stopwatch'?'Stopwatch':'Countdown';
+  document.getElementById('timerDisplay').textContent='00:00:00';
+}
+function timerToggle(){
+  if(timerMode==='countdown'&&!timerRunning){
+    const h=parseInt(document.getElementById('cdHours').value)||0;
+    const mi=parseInt(document.getElementById('cdMins').value)||0;
+    const s=parseInt(document.getElementById('cdSecs').value)||0;
+    cdTotal=h*3600+mi*60+s;
+    if(!cdTotal){showToast('Set countdown time');return;}
+    timerSecs=cdTotal;
+  }
+  timerRunning=!timerRunning;
+  document.getElementById('timerStart').textContent=timerRunning?'⏸':'▶';
+  if(timerRunning){
+    timerInterval=setInterval(()=>{
+      if(timerMode==='stopwatch') timerSecs++;
+      else{timerSecs--;if(timerSecs<=0){timerSecs=0;timerReset();showToast('⏰ Time\'s up!');return;}}
+      document.getElementById('timerDisplay').textContent=formatTime(timerSecs);
+    },1000);
+  } else clearInterval(timerInterval);
+}
+function timerReset(){ clearInterval(timerInterval);timerRunning=false;timerSecs=0;document.getElementById('timerDisplay').textContent='00:00:00';document.getElementById('timerStart').textContent='▶';timerLaps=[];renderLaps(); }
+function timerLap(){ if(!timerRunning)return;timerLaps.unshift(formatTime(timerSecs));renderLaps(); }
+function renderLaps(){
+  const s=document.getElementById('lapsSection'),l=document.getElementById('lapsList');
+  if(!timerLaps.length){s.style.display='none';return;}
+  s.style.display='block';
+  l.innerHTML=timerLaps.map((t,i)=>`<div class="lap-item"><span class="lap-num">Lap ${timerLaps.length-i}</span><span class="lap-time">${t}</span></div>`).join('');
+}
+function formatTime(s){ return `${pad(Math.floor(s/3600))}:${pad(Math.floor(s%3600/60))}:${pad(s%60)}`; }
+function formatTime2(s){ return `${pad(Math.floor(s/60))}:${pad(s%60)}`; }
+
+function intervalToggle(){
+  itRunning=!itRunning;
+  document.getElementById('intervalStart').textContent=itRunning?'⏸':'▶';
+  if(itRunning){
+    if(itSecs===0){itPhase='work';itRound=1;itSecs=parseInt(document.getElementById('itWork').value)||25;}
+    itInterval=setInterval(intervalTick,1000);
+  } else clearInterval(itInterval);
+}
+function intervalTick(){
+  itSecs--;
+  document.getElementById('intervalDisplay').textContent=formatTime2(itSecs);
+  const rounds=parseInt(document.getElementById('itRounds').value)||4;
+  document.getElementById('intervalRoundLabel').textContent=`Round ${itRound} / ${rounds}`;
+  if(itSecs<=0){
+    if(itPhase==='work'){itPhase='rest';itSecs=parseInt(document.getElementById('itRest').value)||5;document.getElementById('intervalPhaseCard').className='interval-phase rest';document.getElementById('intervalPhaseLabel').textContent='REST';}
+    else{itRound++;if(itRound>rounds){intervalReset();showToast('🎉 Session done!');launchConfetti();return;}itPhase='work';itSecs=parseInt(document.getElementById('itWork').value)||25;document.getElementById('intervalPhaseCard').className='interval-phase work';document.getElementById('intervalPhaseLabel').textContent='WORK';}
+  }
+}
+function intervalReset(){ clearInterval(itInterval);itRunning=false;itPhase='work';itRound=1;itSecs=0;document.getElementById('intervalStart').textContent='▶';document.getElementById('intervalDisplay').textContent='00:00';document.getElementById('intervalPhaseCard').className='interval-phase work';document.getElementById('intervalPhaseLabel').textContent='WORK';document.getElementById('intervalRoundLabel').textContent='Round 1 / 1'; }
+
+// ── ANALYTICS ─────────────────────────────────────────────────────────────────
+function renderAnalytics(){
+  const now=new Date();
+  const days7=[];
+  for(let i=6;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);days7.push(d);}
+  document.getElementById('weekChart').innerHTML=days7.map(d=>{
+    const ds=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const done=DB.habits.filter(h=>isDone(h.id,ds)).length;
+    const pct=DB.habits.length?Math.round(done/DB.habits.length*100):0;
+    const h=Math.max(4,Math.round(pct/100*100));
+    const isT=ds===todayStr();
+    return `<div class="chart-bar-wrap"><div class="chart-bar" style="height:${h}px;background:${isT?'var(--accent)':'var(--green)'}"></div><div class="chart-day">${DAYS7[d.getDay()]}</div></div>`;
+  }).join('');
+
+  const todayDone=DB.habits.filter(h=>isDone(h.id,todayStr())).length;
+  const total=DB.habits.length;
+  const pctD=total?todayDone/total:0;
+  document.getElementById('pieDone').style.strokeDashoffset=251.2*(1-pctD);
+  document.getElementById('statDone').textContent=todayDone;
+  document.getElementById('statLeft').textContent=total-todayDone;
+  let best=0; DB.habits.forEach(h=>{const s=getBestStreak(h);if(s>best)best=s;});
+  document.getElementById('statStreak').textContent=best;
+  const mDates=monthDates(now.getFullYear(),now.getMonth());
+  let mTotal=0,mDone=0;
+  DB.habits.forEach(h=>{mTotal+=mDates.length;mDone+=mDates.filter(d=>isDone(h.id,d)).length;});
+  document.getElementById('statMonthly').textContent=(mTotal?Math.round(mDone/mTotal*100):0)+'%';
+
+  const hs=document.getElementById('habitStats');
+  hs.innerHTML=DB.habits.length?DB.habits.map(h=>{
+    const mD=mDates.filter(d=>isDone(h.id,d)).length;
+    const pct=h.goal?Math.round(mD/h.goal*100):0;
+    return `<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:14px;font-weight:600">${h.icon} ${h.name}</div><div style="font-size:13px;color:var(--green);font-weight:700">${mD}/${h.goal} (${pct}%)</div></div><div class="habit-prog"><div class="habit-prog-fill" style="width:${Math.min(100,pct)}%;background:${h.color}"></div></div></div>`;
+  }).join(''):'<div style="color:var(--muted);font-size:13px;padding:10px">No habits to analyze</div>';
+
+  const ranked=[...DB.habits].map(h=>{const mD=mDates.filter(d=>isDone(h.id,d)).length;return{...h,mDone:mD,pct:h.goal?Math.round(mD/h.goal*100):0};}).sort((a,b)=>b.pct-a.pct);
+  document.getElementById('topPerformers').innerHTML=ranked.slice(0,5).map((h,i)=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:8px">
+      <div style="width:28px;height:28px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--muted)">${i+1}</div>
+      <div style="font-size:20px">${h.icon}</div>
+      <div style="flex:1"><div style="font-size:13px;font-weight:600">${h.name}</div><div style="font-size:11px;color:var(--muted)">${h.mDone}/${h.goal} · ${h.pct}%</div></div>
+      <div class="streak-badge">🔥${getStreak(h)}</div>
+    </div>`).join('');
+}
+
+// ── CALENDAR ──────────────────────────────────────────────────────────────────
+let calYear=new Date().getFullYear(),calMonth=new Date().getMonth();
+function calPrev(){ calMonth--;if(calMonth<0){calMonth=11;calYear--;} renderCalendar(); }
+function calNext(){ calMonth++;if(calMonth>11){calMonth=0;calYear++;} renderCalendar(); }
+function renderCalendar(){
+  document.getElementById('calMonthLabel').textContent=`${MONTHS[calMonth]} ${calYear}`;
+  const firstDay=new Date(calYear,calMonth,1).getDay();
+  const days=daysInMonth(calYear,calMonth);
+  let html=DAYS7.map(d=>`<div class="cal-header">${d[0]}</div>`).join('');
+  for(let i=0;i<firstDay;i++) html+=`<div class="cal-cell empty"></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=`${calYear}-${pad(calMonth+1)}-${pad(d)}`;
+    const isToday=ds===todayStr();
+    const done=DB.habits.filter(h=>isDone(h.id,ds)).length;
+    html+=`<div class="cal-cell ${isToday?'today':''} ${done>0&&!isToday?'has-habit':''}" onclick="calSelectDay('${ds}','${d}')">
+      ${d}${done>0?'<div class="cal-dot"></div>':''}
+    </div>`;
+  }
+  document.getElementById('calGrid').innerHTML=html;
+}
+function calSelectDay(ds,day){
+  const dt=new Date(ds);
+  const done=DB.habits.filter(h=>isDone(h.id,ds));
+  const notDone=DB.habits.filter(h=>!isDone(h.id,ds));
+  document.getElementById('calDaySummary').innerHTML=`
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px">${MONTHS[dt.getMonth()]} ${day}</div>
+    <div style="font-size:12px;color:var(--green);margin-bottom:6px">✅ Done (${done.length})</div>
+    ${done.map(h=>`<div style="font-size:13px;margin-bottom:4px">${h.icon} ${h.name}</div>`).join('')||'<div style="font-size:12px;color:var(--muted)">None</div>'}
+    <div style="font-size:12px;color:var(--muted);margin:10px 0 6px">⬜ Not done (${notDone.length})</div>
+    ${notDone.map(h=>`<div style="font-size:13px;color:var(--muted);margin-bottom:4px">${h.icon} ${h.name}</div>`).join('')||'<div style="font-size:12px;color:var(--muted)">All done!</div>'}`;
+}
+
+// ── NOTES ─────────────────────────────────────────────────────────────────────
+function openNoteModal(){ document.getElementById('noteText').value=''; document.getElementById('noteModal').classList.add('open'); }
+function saveNote(){
+  const txt=document.getElementById('noteText').value.trim();
+  if(!txt){showToast('Write something first');return;}
+  DB.notes.unshift({id:DB.nextId++,text:txt,date:todayStr(),ts:Date.now()});
+  saveDB(); closeModal('noteModal'); renderNotes(); showToast('Note saved!');
+}
+function renderNotes(){
+  const list=document.getElementById('notesList'),empty=document.getElementById('emptyNotes');
+  if(!DB.notes.length){list.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  list.innerHTML=DB.notes.map(n=>`
+    <div class="note-card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="note-date">${fmtDate(n.date)}</div>
+        <div style="cursor:pointer;color:var(--muted);font-size:22px;padding:4px" onclick="deleteNote(${n.id})">×</div>
+      </div>
+      <div class="note-text">${n.text.replace(/\n/g,'<br>')}</div>
+    </div>`).join('');
+}
+function deleteNote(id){ DB.notes=DB.notes.filter(n=>n.id!=id); saveDB(); renderNotes(); }
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+function setTheme(t){
+  DB.settings.theme=t; saveDB(); applyTheme(t);
+  document.querySelectorAll('.theme-opt').forEach(el=>el.classList.remove('active'));
+  document.getElementById('theme-'+t)?.classList.add('active');
+}
+function applyTheme(t){
+  const r=document.documentElement;
+  if(t==='light') r.setAttribute('data-theme','light');
+  else r.removeAttribute('data-theme');
+  if(t==='amoled'){r.style.setProperty('--bg','#000');r.style.setProperty('--surface','#0a0a0a');r.style.setProperty('--card','#111');}
+  else{r.style.removeProperty('--bg');r.style.removeProperty('--surface');r.style.removeProperty('--card');}
+  document.getElementById('themeBtn').textContent=t==='light'?'🌙':'☀️';
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', t==='light'?'#f0f2f8':'#0a0b0f');
+}
+function toggleTheme(){ const c=DB.settings.theme||'dark'; setTheme(c==='dark'?'light':c==='light'?'amoled':'dark'); }
+function toggleSwitch(el){ el.classList.toggle('on'); }
+
+function exportData(){
+  const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`habitflow-backup-${todayStr()}.json`; a.click();
+  showToast('Data exported!');
+}
+function exportCSV(){
+  const now=new Date(),mDates=monthDates(now.getFullYear(),now.getMonth());
+  let csv='Habit,Category,'+mDates.join(',')+'\n';
+  DB.habits.forEach(h=>{ csv+=`"${h.name}","${h.category}",`+mDates.map(d=>isDone(h.id,d)?1:0).join(',')+'\n'; });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`habitflow-${todayStr()}.csv`; a.click();
+  showToast('CSV exported!');
+}
+function backupData(){ exportData(); }
+function restoreBackup(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{ try{DB=JSON.parse(ev.target.result);saveDB();renderPage(activePage);showToast('Backup restored!');}catch(e){showToast('Invalid backup file');} };
+  r.readAsText(f);
+}
+function clearAllData(){
+  if(!confirm('Clear ALL data? This cannot be undone!')) return;
+  DB=JSON.parse(JSON.stringify(DB_DEFAULT)); saveDB(); renderPage(activePage); showToast('All data cleared');
+}
+function openSearch(){ showToast('🔍 Search coming soon'); }
+function openNotifModal(){ document.getElementById('notifModal').classList.add('open'); }
+function scheduleReminder(){
+  const t=document.getElementById('reminderTime').value;
+  if(typeof Notification!=='undefined'&&Notification.permission!=='granted') Notification.requestPermission();
+  closeModal('notifModal'); showToast(`⏰ Reminder set for ${t}`);
+}
+
+// ── MODALS ────────────────────────────────────────────────────────────────────
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(bg=>{
+  bg.addEventListener('click',e=>{ if(e.target===bg) bg.classList.remove('open'); });
+});
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// ── CONFETTI ──────────────────────────────────────────────────────────────────
+function launchConfetti(){
+  const canvas=document.getElementById('confettiCanvas');
+  const ctx=canvas.getContext('2d');
+  canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+  const cols=['#6c63ff','#00d97e','#ff4d6d','#ff8c42','#ffd166','#06d6a0','#4fc3f7'];
+  const pieces=Array.from({length:100},()=>({
+    x:Math.random()*canvas.width,y:-20,r:Math.random()*6+2,
+    color:cols[Math.floor(Math.random()*cols.length)],
+    vx:(Math.random()-0.5)*5,vy:Math.random()*5+2,
+    life:1,rot:Math.random()*360,rotV:(Math.random()-0.5)*10
+  }));
+  let frame;
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    let alive=false;
+    pieces.forEach(p=>{
+      p.y+=p.vy;p.x+=p.vx;p.life-=0.013;p.rot+=p.rotV;
+      if(p.life>0&&p.y<canvas.height){
+        alive=true;ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+        ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot*Math.PI/180);
+        ctx.fillRect(-p.r,-p.r/2,p.r*2,p.r);ctx.restore();
+      }
+    });
+    ctx.globalAlpha=1;
+    if(alive) frame=requestAnimationFrame(draw); else ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+  cancelAnimationFrame(frame); draw();
+}
+
+// ── SAMPLE DATA ───────────────────────────────────────────────────────────────
+function addSampleData(){
+  if(DB.habits.length) return;
+  [
+    {name:'Morning Walk',    category:'Fitness',    icon:'🚶',color:'#00d97e',note:'7:00 AM',        goal:30,type:'positive',frequency:'daily'},
+    {name:'Drink 8 Glasses', category:'Health',     icon:'💧',color:'#4fc3f7',note:'Throughout day', goal:30,type:'positive',frequency:'daily'},
+    {name:'Read 30 mins',    category:'Learning',   icon:'📚',color:'#6c63ff',note:'Before bed',     goal:30,type:'positive',frequency:'daily'},
+    {name:'Meditate',        category:'Meditation', icon:'🧘',color:'#06d6a0',note:'10 minutes',     goal:30,type:'positive',frequency:'daily'},
+    {name:'No Social Media', category:'Work',       icon:'📵',color:'#ff4d6d',note:'After 10pm',     goal:30,type:'negative',frequency:'daily'},
+  ].forEach(s=>DB.habits.push({...s,id:DB.nextId++,createdAt:todayStr()}));
+  saveDB();
+}
+
+// ── KEYBOARD / SCROLL FIX ────────────────────────────────────────────────────
+// When iOS keyboard appears, keep scroll area scrollable but
+// prevent the viewport from resizing and pushing the layout.
+let pendingScrollRestore=false;
+window.addEventListener('resize',()=>{
+  // iOS fires resize when keyboard appears — just re-clamp
+  // the scroll area height via repaint (CSS handles it via flex).
+}, {passive:true});
+
+// Prevent default on touchmove on the app root to stop
+// Safari's pull-to-refresh and horizontal swipe navigation.
+document.addEventListener('touchmove', e=>{
+  // Allow scrolling inside .scroll-area, .modal, .date-strip, etc.
+  // Block everything else (the shell, header, bottom-nav).
+  const target = e.target;
+  const scrollable = target.closest('.scroll-area, .modal, .date-strip, .nav-tabs, #catFilter');
+  if(!scrollable){
+    e.preventDefault();
+  }
+},{passive:false});
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded',()=>{
+  addSampleData();
+  applyTheme(DB.settings?.theme||'dark');
+  buildNav();
+  renderPage('habits');
+  const t=DB.settings?.theme||'dark';
+  document.querySelectorAll('.theme-opt').forEach(el=>el.classList.remove('active'));
+  document.getElementById('theme-'+t)?.classList.add('active');
+  setTimeout(()=>{ const s=document.getElementById('splash'); if(s) s.style.display='none'; },2200);
+});
+</script>
+</body>
+</html>
